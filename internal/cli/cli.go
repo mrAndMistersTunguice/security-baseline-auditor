@@ -183,7 +183,7 @@ func (a *App) audit(ctx context.Context, args []string) int {
 
 	b := baseline.Default()
 	if *configPath != "" {
-		b, err = baseline.Load(a.Env.FS, *configPath, ruleIDs(a.Catalog))
+		b, err = baseline.Load(a.Env.FS, *configPath, ruleIDs(a.Catalog), a.Env.Elevated)
 		if err != nil {
 			fmt.Fprintf(a.Stderr, "sba: %v\n", err)
 			return ExitUsage

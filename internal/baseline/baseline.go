@@ -56,7 +56,22 @@ type exclusion struct {
 }
 
 // Load reads and parses a baseline file.
-func Load(fsys platform.FS, path string, knownRules []string) (Baseline, error) {
+//
+// When elevated is true, a file that other users can modify is refused: a
+// baseline decides which checks run, so a writable one would let any local
+// user hide findings from a root-run audit. The check relies on Unix
+// ownership data and is skipped where that is unavailable.
+func Load(fsys platform.FS, path string, knownRules []string, elevated bool) (Baseline, error) {
+	if elevated {
+		info, err := fsys.Stat(path)
+		if err != nil {
+			return Baseline{}, fmt.Errorf("cannot read baseline: %w", err)
+		}
+		if info.UID >= 0 && info.Mode.Perm()&0o022 != 0 {
+			return Baseline{}, fmt.Errorf("baseline %s is writable by group or others (mode %04o); "+
+				"refusing to use it with elevated privileges", path, info.Mode.Perm())
+		}
+	}
 	data, err := fsys.ReadFile(path, MaxFileSize)
 	if err != nil {
 		if errors.Is(err, platform.ErrTooLarge) {

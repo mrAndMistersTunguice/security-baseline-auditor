@@ -144,20 +144,43 @@ func TestParseAliasBombs(t *testing.T) {
 func TestLoad(t *testing.T) {
 	t.Run("size limit", func(t *testing.T) {
 		fsys := platformtest.NewFS().Add("/b.yaml", platformtest.File{Data: make([]byte, MaxFileSize+1)})
-		_, err := Load(fsys, "/b.yaml", known)
+		_, err := Load(fsys, "/b.yaml", known, false)
 		if err == nil || !strings.Contains(err.Error(), "larger than") {
 			t.Fatalf("err = %v", err)
 		}
 	})
 	t.Run("unreadable", func(t *testing.T) {
 		fsys := platformtest.NewFS().Add("/b.yaml", platformtest.File{Err: fs.ErrPermission})
-		if _, err := Load(fsys, "/b.yaml", known); err == nil {
+		if _, err := Load(fsys, "/b.yaml", known, false); err == nil {
 			t.Fatal("expected error")
 		}
 	})
 	t.Run("directory", func(t *testing.T) {
-		if _, err := Load(platform.OSFS{}, t.TempDir(), known); err == nil {
+		if _, err := Load(platform.OSFS{}, t.TempDir(), known, false); err == nil {
 			t.Fatal("expected error")
+		}
+	})
+	t.Run("elevated audit refuses writable baseline", func(t *testing.T) {
+		body := []byte("version: 1\n")
+		tests := []struct {
+			name    string
+			file    platformtest.File
+			wantErr bool
+		}{
+			{"world-writable", platformtest.File{Data: body, Mode: 0o666, UID: 1000}, true},
+			{"group-writable", platformtest.File{Data: body, Mode: 0o664, UID: 0}, true},
+			{"owner-only write", platformtest.File{Data: body, Mode: 0o644, UID: 1000}, false},
+			{"ownership unknown (Windows)", platformtest.File{Data: body, Mode: 0o666, UID: -1}, false},
+		}
+		for _, tt := range tests {
+			fsys := platformtest.NewFS().Add("/b.yaml", tt.file)
+			_, err := Load(fsys, "/b.yaml", known, true)
+			if (err != nil) != tt.wantErr {
+				t.Errorf("%s: err = %v, wantErr %v", tt.name, err, tt.wantErr)
+			}
+			if _, err := Load(fsys, "/b.yaml", known, false); err != nil {
+				t.Errorf("%s: unprivileged load must not check permissions: %v", tt.name, err)
+			}
 		}
 	})
 	t.Run("real file", func(t *testing.T) {
@@ -165,7 +188,7 @@ func TestLoad(t *testing.T) {
 		if err := os.WriteFile(p, []byte("version: 1\nrules: [USER-001]\n"), 0o600); err != nil {
 			t.Fatal(err)
 		}
-		b, err := Load(platform.OSFS{}, p, known)
+		b, err := Load(platform.OSFS{}, p, known, false)
 		if err != nil || len(b.Rules) != 1 {
 			t.Fatalf("b = %+v, err = %v", b, err)
 		}

@@ -122,7 +122,11 @@ type SSHDConfig struct {
 	// Files lists every file read, in processing order.
 	Files []string `json:"files"`
 	// Directives in processing order, with Include files expanded inline.
+	// Only documented sshd keywords are kept.
 	Directives []SSHDirective `json:"directives"`
+	// IgnoredDirectives counts lines with unrecognized keywords, whose
+	// arguments were discarded.
+	IgnoredDirectives int `json:"ignored_directives"`
 }
 
 // SSHDirective is one keyword line of an sshd configuration file.

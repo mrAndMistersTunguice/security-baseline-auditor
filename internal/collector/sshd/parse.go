@@ -107,6 +107,10 @@ func (l *loader) parseFile(name string, depth int, match string) error {
 				}
 			}
 		default:
+			if !knownKeywords[keyword] {
+				l.cfg.IgnoredDirectives++
+				continue
+			}
 			if len(l.cfg.Directives) >= MaxDirectives {
 				return fmt.Errorf("%w: more than %d directives", ErrLimit, MaxDirectives)
 			}
@@ -132,6 +136,9 @@ func (l *loader) include(pattern, file string, line, depth int, match string) er
 	matches, err := l.fs.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("%s:%d: Include %q: %w", file, line, pattern, err)
+	}
+	if len(l.cfg.Files)+len(matches) > MaxFiles {
+		return fmt.Errorf("%w: Include %q at %s:%d matches %d files (limit %d in total)", ErrLimit, pattern, file, line, len(matches), MaxFiles)
 	}
 	for _, m := range matches {
 		if err := l.parseFile(m, depth+1, match); err != nil {
@@ -159,7 +166,7 @@ func tokenizeLine(line string) (string, []string, error) {
 
 	end := strings.IndexAny(line, " \t\r\n=\"")
 	if end < 0 {
-		return "", nil, fmt.Errorf("%w: no argument after keyword %q", ErrSyntax, line)
+		return "", nil, fmt.Errorf("%w: no argument after keyword %s", ErrSyntax, safeKeyword(line))
 	}
 	if line[end] == '"' {
 		return "", nil, fmt.Errorf("%w: unexpected quote in keyword", ErrSyntax)
@@ -172,7 +179,7 @@ func tokenizeLine(line string) (string, []string, error) {
 		rest = strings.TrimLeft(rest[1:], " \t\r\n")
 	}
 	if rest == "" {
-		return "", nil, fmt.Errorf("%w: no argument after keyword %q", ErrSyntax, keyword)
+		return "", nil, fmt.Errorf("%w: no argument after keyword %s", ErrSyntax, safeKeyword(keyword))
 	}
 
 	args, err := splitArgs(rest)
@@ -180,7 +187,7 @@ func tokenizeLine(line string) (string, []string, error) {
 		return "", nil, err
 	}
 	if len(args) == 0 {
-		return "", nil, fmt.Errorf("%w: no argument after keyword %q", ErrSyntax, keyword)
+		return "", nil, fmt.Errorf("%w: no argument after keyword %s", ErrSyntax, safeKeyword(keyword))
 	}
 
 	keyword = strings.ToLower(keyword)
@@ -188,6 +195,22 @@ func tokenizeLine(line string) (string, []string, error) {
 		keyword = canonical
 	}
 	return keyword, args, nil
+}
+
+// safeKeyword quotes a keyword for an error message only if it looks like a
+// real sshd keyword. Error messages end up in reports, and a line of an
+// unexpected file (for example a password hash from a file pulled in by a
+// malicious Include) must never be echoed.
+func safeKeyword(k string) string {
+	if len(k) == 0 || len(k) > 64 {
+		return "(redacted)"
+	}
+	for _, r := range k {
+		if (r < 'a' || r > 'z') && (r < 'A' || r > 'Z') && (r < '0' || r > '9') {
+			return "(redacted)"
+		}
+	}
+	return `"` + k + `"`
 }
 
 // splitArgs mirrors argv_split(..., terminate_on_comment=1) from OpenSSH.

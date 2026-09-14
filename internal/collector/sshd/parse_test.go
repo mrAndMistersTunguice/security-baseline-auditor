@@ -2,6 +2,7 @@ package sshd
 
 import (
 	"errors"
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -241,6 +242,41 @@ func TestLoadIncludeSemantics(t *testing.T) {
 		fsys := platformtest.NewFS().AddText("/etc/ssh/sshd_config", "Include /etc/ssh/[.conf\n")
 		if _, err := Load(fsys, "/etc/ssh/sshd_config", "/etc/ssh"); err == nil {
 			t.Fatal("expected error for malformed glob")
+		}
+	})
+
+	t.Run("syntax errors never echo foreign file content", func(t *testing.T) {
+		// A writable sshd_config could include a root-only file; the error
+		// that results must not quote its lines.
+		fsys := platformtest.NewFS().
+			AddText("/etc/ssh/sshd_config", "Include /etc/shadow\n").
+			AddText("/etc/shadow", "root:$6$salt$SECRETHASH:19800:0:99999:7:::\n")
+		_, err := Load(fsys, "/etc/ssh/sshd_config", "/etc/ssh")
+		if !errors.Is(err, ErrSyntax) || strings.Contains(err.Error(), "SECRETHASH") || !strings.Contains(err.Error(), "redacted") {
+			t.Fatalf("err = %v", err)
+		}
+	})
+
+	t.Run("unknown keywords are counted, not stored", func(t *testing.T) {
+		fsys := platformtest.NewFS().
+			AddText("/etc/ssh/sshd_config", "Include /root/.aws/credentials\nPermitRootLogin no\n").
+			AddText("/root/.aws/credentials", "aws_secret_access_key = SECRETVALUE\n")
+		cfg, err := Load(fsys, "/etc/ssh/sshd_config", "/etc/ssh")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if cfg.IgnoredDirectives != 1 || len(cfg.Directives) != 1 || strings.Contains(fmt.Sprint(cfg), "SECRETVALUE") {
+			t.Fatalf("cfg = %+v", cfg)
+		}
+	})
+
+	t.Run("include matching too many files", func(t *testing.T) {
+		fsys := platformtest.NewFS().AddText("/etc/ssh/sshd_config", "Include /etc/ssh/d/*.conf\n")
+		for i := range MaxFiles + 1 {
+			fsys.AddText(fmt.Sprintf("/etc/ssh/d/%04d.conf", i), "Port 22\n")
+		}
+		if _, err := Load(fsys, "/etc/ssh/sshd_config", "/etc/ssh"); !errors.Is(err, ErrLimit) {
+			t.Fatalf("err = %v, want ErrLimit", err)
 		}
 	})
 

@@ -85,7 +85,11 @@ func TestLimitedBuffer(t *testing.T) {
 
 func TestExecRunnerRejectsRelativePath(t *testing.T) {
 	_, err := ExecRunner{}.Run(context.Background(), "nft", "list", "ruleset")
-	if err == nil || !strings.Contains(err.Error(), "absolute") {
+	if err == nil {
+		t.Fatal("relative program path must be rejected")
+	}
+	// On Unix the path check fires; elsewhere execution is refused outright.
+	if !strings.Contains(err.Error(), "absolute") && !errors.Is(err, ErrUntrustedBinary) {
 		t.Fatalf("err = %v", err)
 	}
 }

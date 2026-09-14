@@ -22,7 +22,7 @@ func TestShippedConfigsAreValid(t *testing.T) {
 	}
 	for _, f := range files {
 		t.Run(filepath.Base(f), func(t *testing.T) {
-			if _, err := baseline.Load(platform.OSFS{}, f, ids); err != nil {
+			if _, err := baseline.Load(platform.OSFS{}, f, ids, false); err != nil {
 				t.Fatal(err)
 			}
 		})

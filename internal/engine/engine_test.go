@@ -98,9 +98,7 @@ func TestRulesOutsideTheirPlatformsAreSkipped(t *testing.T) {
 func TestPanickingRuleBecomesError(t *testing.T) {
 	catalog := []rules.Rule{
 		{ID: "A-001", Severity: model.SeverityHigh, Check: func(s *model.Snapshot) rules.Result {
-			var m map[string]int
-			m["x"] = 1 // panics: assignment to nil map
-			return rules.Pass("unreachable")
+			panic("rule bug")
 		}},
 		fakeRule("A-002", model.SeverityLow, rules.Pass("ok")),
 	}
