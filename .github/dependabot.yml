@@ -1,0 +1,12 @@
+# Two Go module dependencies and SHA-pinned GitHub Actions: pinned SHAs do
+# not receive updates on their own, so Dependabot proposes them.
+version: 2
+updates:
+  - package-ecosystem: gomod
+    directory: /
+    schedule:
+      interval: weekly
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly

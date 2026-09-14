@@ -1,0 +1,147 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: the workflow only needs to read the repository.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: test (${{ matrix.os }}, Go ${{ matrix.go }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        go: ["1.26.x", "1.27.x"]
+    runs-on: ${{ matrix.os }}
+    steps:
+      # Actions are pinned to commit SHAs; Dependabot keeps them current.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ matrix.go }}
+
+      - name: gofmt
+        shell: bash
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "Files need gofmt:"; echo "$unformatted"; exit 1
+          fi
+
+      - name: go vet
+        run: go vet ./...
+
+      - name: go test
+        run: go test ./...
+
+      - name: go test -race
+        if: runner.os == 'Linux'
+        run: go test -race ./...
+
+  lint:
+    name: static analysis, vulnerabilities, fuzz smoke
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.x"
+
+      - name: staticcheck (all target platforms)
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@v0.8.1
+          for os in linux windows darwin freebsd; do
+            echo "::group::GOOS=$os"
+            GOOS=$os "$(go env GOPATH)/bin/staticcheck" ./...
+            echo "::endgroup::"
+          done
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.8.0 ./...
+
+      - name: cross-compile
+        run: |
+          for target in linux/amd64 linux/arm64 windows/amd64 windows/arm64 darwin/arm64 freebsd/amd64; do
+            echo "building $target"
+            GOOS=${target%/*} GOARCH=${target#*/} go build -o /dev/null ./cmd/sba
+          done
+
+      - name: fuzz smoke (15s per target)
+        run: |
+          go test ./internal/collector/sshd -run '^$' -fuzz '^FuzzLoad$' -fuzztime 15s
+          go test ./internal/collector/accounts -run '^$' -fuzz '^FuzzParsePasswd$' -fuzztime 15s
+          go test ./internal/collector/firewall -run '^$' -fuzz '^FuzzAnalyzeRuleset$' -fuzztime 15s
+          go test ./internal/baseline -run '^$' -fuzz '^FuzzParse$' -fuzztime 15s
+
+  smoke:
+    name: real-system smoke test (${{ matrix.os }})
+    needs: test
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: "1.27.x"
+
+      - name: build
+        run: go build -trimpath -o sba${{ runner.os == 'Windows' && '.exe' || '' }} ./cmd/sba
+
+      - name: CLI basics (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ./sba --version
+          ./sba rules list
+          set +e
+          ./sba bogus-command; code=$?
+          set -e
+          test "$code" -eq 2
+
+      - name: audit as unprivileged user (Linux)
+        if: runner.os == 'Linux'
+        run: |
+          ./sba audit --fail-on none
+          ./sba audit --format json --fail-on none > report.json
+          python3 -c 'import json; r = json.load(open("report.json")); print(r["summary"])'
+          set +e
+          ./sba audit > /dev/null; code=$?
+          set -e
+          echo "default audit exit code: $code"
+          test "$code" -eq 0 -o "$code" -eq 1
+
+      - name: audit as root (Linux, exercises shadow and nftables collection)
+        if: runner.os == 'Linux'
+        run: |
+          sudo ./sba audit --fail-on none
+          sudo ./sba audit --format json --fail-on none > root-report.json
+          python3 -c 'import json; r = json.load(open("root-report.json")); assert r["host"]["elevated"]; print(r["summary"])'
+
+      - name: audit (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          ./sba.exe --version
+          ./sba.exe audit --fail-on none
+          ./sba.exe audit --format json --fail-on none | Out-File -Encoding utf8 report.json
+          $report = Get-Content report.json -Raw | ConvertFrom-Json
+          $report.summary
+          if ($report.host.os -ne 'windows') { throw 'unexpected host OS' }
