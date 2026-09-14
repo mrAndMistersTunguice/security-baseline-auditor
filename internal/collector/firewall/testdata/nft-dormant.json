@@ -1,0 +1,1 @@
+{"nftables": [{"table": {"family": "inet", "name": "filter", "handle": 1, "flags": ["dormant"]}}, {"chain": {"family": "inet", "table": "filter", "name": "input", "handle": 1, "type": "filter", "hook": "input", "prio": 0, "policy": "drop"}}]}
