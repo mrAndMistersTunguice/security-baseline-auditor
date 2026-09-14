@@ -50,6 +50,21 @@ jobs:
         if: runner.os == 'Linux'
         run: go test -race ./...
 
+      # `go test` hides skips without -v. The Unix-only tests guard security
+      # properties (FIFO handling, binary trust check, child environment,
+      # unreadable include directories), so a silent skip must fail CI.
+      - name: Unix-specific tests must not be skipped
+        if: runner.os == 'Linux'
+        run: |
+          go test -count=1 -v -run 'TestReadFileDoesNotBlockOnFIFO|TestOSFSStatReportsOwnershipAndSymlink|TestExecRunner|TestUnreadableDropInDirectoryOnRealFS' \
+            ./internal/platform ./internal/collector/sshd | tee unix-tests.log
+          if grep -E -- '--- SKIP' unix-tests.log; then
+            echo "::error::Unix-specific tests were skipped"; exit 1
+          fi
+          ran=$(grep -cE -- '^\s*--- PASS' unix-tests.log)
+          echo "Unix-specific tests passed: $ran"
+          test "$ran" -ge 8
+
   lint:
     name: static analysis, vulnerabilities, fuzz smoke
     runs-on: ubuntu-latest
