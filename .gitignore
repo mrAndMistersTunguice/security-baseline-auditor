@@ -1,0 +1,25 @@
+# Build output
+/sba
+/sba.exe
+/bin/
+/dist/
+
+# Test and coverage artifacts
+*.test
+*.out
+coverage.*
+
+# Local reports may contain host names, account names and configuration details
+/reports/
+*.report.json
+
+# Editors and OS files
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Environment files
+.env
+.env.*
