@@ -1,0 +1,13 @@
+# Minimal baseline that evaluates only the OpenSSH server checks.
+version: 1
+name: "OpenSSH server only"
+rules:
+  - SSH-001
+  - SSH-002
+  - SSH-003
+  - SSH-004
+  - SSH-005
+  - SSH-006
+  - SSH-007
+  - SSH-008
+  - SSH-009

@@ -1,0 +1,6 @@
+Include /etc/ssh/sshd_config.d/*.conf
+PermitRootLogin yes
+UsePAM yes
+X11Forwarding yes
+PermitUserEnvironment yes
+Subsystem sftp /usr/lib/openssh/sftp-server

@@ -1,0 +1,194 @@
+Security Baseline Audit
+=======================
+
+Host:        fixture-host (Ubuntu 24.04.1 LTS, linux/amd64)
+Privileges:  elevated
+Baseline:    default (all built-in rules) (built-in)
+Tool:        sba test
+Time:        2026-01-02 03:04:05 UTC
+
+Summary
+-------
+Rules:       22 selected: 4 PASS, 17 FAIL, 1 SKIP, 0 ERROR
+Failed:      CRITICAL 2 | HIGH 5 | MEDIUM 6 | LOW 4 | INFO 0
+Score:       21/100 over 21 of 22 selected rules
+             (severity-weighted percentage of evaluated rules (PASS or FAIL) that passed; weights LOW=1 MEDIUM=2 HIGH=4 CRITICAL=8 INFO=0; SKIP and ERROR are excluded; not a measure of overall security)
+
+Failed checks (17)
+------------------
+
+[CRITICAL] FILE-003  /etc/passwd must be writable only by root
+  Result:      /etc/passwd has unsafe ownership or permissions
+  Evidence:
+    - /etc/passwd mode -rw-rw-rw- (0666) owner uid 0 gid 0
+    - forbidden permission bits 0022 are set (this rule forbids 0022)
+  Severity:    CRITICAL. Write access lets any user add a UID 0 account or change root's password field, an immediate and reliable privilege escalation.
+  Remediation: chown root:root /etc/passwd && chmod 0644 /etc/passwd
+  Reference:   https://man7.org/linux/man-pages/man5/passwd.5.html
+  Reference:   https://man7.org/linux/man-pages/man1/chmod.1.html
+
+[CRITICAL] USER-001  Only root may have UID 0
+  Result:      1 account(s) other than root have UID 0
+  Evidence:
+    - toor has UID 0 (/etc/passwd line 5)
+  Severity:    CRITICAL. An extra UID 0 account is equivalent to a second root account and typically indicates compromise or a severe misconfiguration.
+  Remediation: Remove the account or assign it a unique non-zero UID after investigating why it exists.
+  Reference:   https://man7.org/linux/man-pages/man5/passwd.5.html
+
+[HIGH] FILE-001  /etc/shadow must not be accessible to other users
+  Result:      /etc/shadow has unsafe ownership or permissions
+  Evidence:
+    - /etc/shadow mode -rw-r--r-- (0644) owner uid 0 gid 0
+    - forbidden permission bits 0004 are set (this rule forbids 0027)
+  Severity:    HIGH. Read access exposes every password hash to offline cracking; write access allows setting any account's password, including root's.
+  Remediation: chown root /etc/shadow && chmod 0640 /etc/shadow (Debian family, group shadow) or chmod 0000 (RHEL family).
+  Reference:   https://man7.org/linux/man-pages/man5/shadow.5.html
+  Reference:   https://man7.org/linux/man-pages/man1/chmod.1.html
+
+[HIGH] FILE-005  /etc/sudoers must be owned by root and not writable by others
+  Result:      /etc/sudoers has unsafe ownership or permissions
+  Evidence:
+    - /etc/sudoers mode -r--r----- (0440) owner uid 1000 gid 0
+    - owned by uid 1000 instead of root
+  Severity:    HIGH. Write access to the policy is a direct path to root; sudo refuses some unsafe modes, which limits but does not remove the risk.
+  Remediation: chown root:root /etc/sudoers && chmod 0440 /etc/sudoers (edit only with visudo).
+  Reference:   https://www.sudo.ws/docs/man/sudoers.man/
+
+[HIGH] FW-001  A host firewall must filter inbound traffic
+  Result:      no active inbound filtering was found
+  Evidence:
+    - nftables kernel ruleset: 1 input base chain(s) inspected with /usr/sbin/nft
+    - nftables kernel ruleset: no drop or reject verdict reachable from any input chain; no legacy iptables tables loaded
+    - ufw: /etc/ufw/ufw.conf: ENABLED=no
+  Severity:    HIGH. Without host filtering every listening service is reachable from every attached network; on flat or cloud networks the host firewall is often the only network-level control.
+  Remediation: Linux: enable firewalld ('systemctl enable --now firewalld'), ufw ('ufw enable') or an nftables ruleset with a default-deny input policy. Windows: enable the firewall for the Domain, Private and Public profiles ('Set-NetFirewallProfile -All -Enabled True').
+  Reference:   https://wiki.nftables.org/wiki-nftables/index.php/Main_Page
+  Reference:   https://firewalld.org/documentation/
+  Reference:   https://learn.microsoft.com/en-us/windows/security/operating-system-security/network-security/windows-firewall/
+
+[HIGH] SSH-001  SSH root login with a password must not be allowed
+  Result:      root login with password authentication is permitted
+  Evidence:
+    - PermitRootLogin yes (/etc/ssh/sshd_config:2)
+  Severity:    HIGH. Direct password-based root login exposes the most privileged account to remote brute-force and credential-stuffing attacks and yields full system control on success.
+  Remediation: Set 'PermitRootLogin no' (or 'prohibit-password' if key-based root access is required) and reload sshd.
+  Reference:   https://man.openbsd.org/sshd_config
+
+[HIGH] USER-002  Local accounts must not have empty passwords
+  Result:      accounts with empty passwords exist
+  Evidence:
+    - guest has an empty password field in /etc/passwd
+    - deploy has an empty password in /etc/shadow (line 7)
+  Severity:    HIGH. Access requires no secret at all; whether it is remotely exploitable depends on PAM and service configuration, which keeps it below CRITICAL.
+  Remediation: Lock the account ('passwd -l NAME') or set a strong password.
+  Reference:   https://man7.org/linux/man-pages/man5/shadow.5.html
+  Reference:   https://man7.org/linux/man-pages/man5/passwd.5.html
+
+[MEDIUM] FILE-007  World-writable temporary directories must have the sticky bit
+  Result:      world-writable temporary directories lack the sticky bit
+  Evidence:
+    - /var/tmp is world-writable without the sticky bit
+    - /tmp mode dtrwxrwxrwx (0777) owner uid 0 gid 0
+    - /var/tmp mode drwxrwxrwx (0777) owner uid 0 gid 0
+  Severity:    MEDIUM. Enables tampering with other users' temporary files and symlink races against privileged programs, which depends on a vulnerable program to become an escalation.
+  Remediation: chmod 1777 /tmp /var/tmp
+  Reference:   https://man7.org/linux/man-pages/man1/chmod.1.html
+
+[MEDIUM] SSH-003  SSH password authentication should be disabled
+  Result:      password authentication is enabled
+  Evidence:
+    - PasswordAuthentication yes (/etc/ssh/sshd_config.d/50-cloud-init.conf:1)
+  Severity:    MEDIUM. Password login enables online guessing against every account, but exploitation still requires a weak or leaked password, so the impact is conditional.
+  Remediation: Deploy SSH keys for all users, then set 'PasswordAuthentication no'.
+  Reference:   https://man.openbsd.org/sshd_config
+
+[MEDIUM] SSH-004  SSH keyboard-interactive authentication via PAM should be disabled
+  Result:      keyboard-interactive authentication is enabled with PAM
+  Evidence:
+    - KbdInteractiveAuthentication not set; OpenSSH default is "yes"
+    - UsePAM yes (/etc/ssh/sshd_config:3)
+  Severity:    MEDIUM. It is an equivalent path to password authentication and carries the same conditional risk of password guessing.
+  Remediation: Set 'KbdInteractiveAuthentication no' unless PAM is used for a second factor that requires it.
+  Reference:   https://man.openbsd.org/sshd_config
+
+[MEDIUM] SSH-006  SSH must not process user-supplied environment files
+  Result:      user environment processing is enabled
+  Evidence:
+    - PermitUserEnvironment yes (/etc/ssh/sshd_config:5)
+  Severity:    MEDIUM. Exploitation requires an authenticated user, but it can defeat restricted-shell and forced-command setups that the configuration relies on.
+  Remediation: Set 'PermitUserEnvironment no' (the OpenSSH default).
+  Reference:   https://man.openbsd.org/sshd_config
+
+[MEDIUM] SSH-009  SSH must not enable weak ciphers, MACs or key exchange algorithms
+  Result:      weak SSH algorithms are enabled
+  Evidence:
+    - Ciphers enables weak algorithms: aes256-cbc (/etc/ssh/sshd_config.d/50-cloud-init.conf:2)
+    - MACs not set; OpenSSH defaults contain none of the weak algorithms checked
+    - KexAlgorithms enables weak algorithms: diffie-hellman-group1-sha1 (/etc/ssh/sshd_config.d/50-cloud-init.conf:3)
+  Severity:    MEDIUM. Practical attacks require a network position and, for most of these algorithms, significant effort, but they weaken the confidentiality or integrity guarantees of every session.
+  Remediation: Remove the listed algorithms from Ciphers, MACs and KexAlgorithms, or remove the directives to use the OpenSSH defaults (on RHEL-family systems adjust the system crypto policy instead).
+  Reference:   https://man.openbsd.org/sshd_config
+  Reference:   https://www.rfc-editor.org/rfc/rfc8758
+  Reference:   https://www.rfc-editor.org/rfc/rfc9142
+
+[MEDIUM] USER-004  Local accounts must have unique UIDs
+  Result:      duplicate UIDs found
+  Evidence:
+    - UID 0 is shared by root, toor
+    - UID 1000 is shared by alice, deploy
+  Severity:    MEDIUM. Shared UIDs grant one account the other's access and hide who performed an action, but do not by themselves grant elevated privileges (UID 0 duplicates are covered by USER-001).
+  Remediation: Assign unique UIDs and fix file ownership with 'find / -uid OLD -exec chown NEW {} +'.
+  Reference:   https://man7.org/linux/man-pages/man5/passwd.5.html
+
+[LOW] SSH-002  SSH root login should be disabled entirely
+  Result:      remote root login is permitted
+  Evidence:
+    - PermitRootLogin yes (/etc/ssh/sshd_config:2)
+  Severity:    LOW. Key-based root login is not directly brute-forceable, so the residual risk is loss of accountability and a larger blast radius for a stolen key rather than an exploitable weakness.
+  Remediation: Set 'PermitRootLogin no'; administrators log in as themselves and elevate with sudo.
+  Reference:   https://man.openbsd.org/sshd_config
+
+[LOW] SSH-007  SSH MaxAuthTries should be 4 or lower
+  Result:      MaxAuthTries allows more than 4 attempts
+  Evidence:
+    - MaxAuthTries not set; OpenSSH default is 6
+  Severity:    LOW. The setting only slows guessing per connection; attackers can reconnect, so the security gain is incremental.
+  Remediation: Set 'MaxAuthTries 4' or lower.
+  Reference:   https://man.openbsd.org/sshd_config
+
+[LOW] SSH-008  SSH X11 forwarding should be disabled
+  Result:      X11 forwarding is enabled
+  Evidence:
+    - X11Forwarding yes (/etc/ssh/sshd_config:4)
+  Severity:    LOW. The risk falls mainly on clients connecting to a compromised server and requires the client to request forwarding.
+  Remediation: Set 'X11Forwarding no' unless graphical forwarding is required.
+  Reference:   https://man.openbsd.org/sshd_config
+
+[LOW] USER-005  System accounts should not have interactive login shells
+  Result:      1 system account(s) have an interactive shell
+  Evidence:
+    - backup (UID 34) has shell /bin/sh
+    - system accounts are UID < 1000 (source: /etc/login.defs)
+  Severity:    LOW. Exploitation requires another weakness that grants authentication as the service account; the shell only widens what can be done afterwards.
+  Remediation: Set the shell to nologin ('usermod -s /usr/sbin/nologin NAME'; the path is /sbin/nologin on RHEL-family systems) unless the account genuinely requires one.
+  Reference:   https://man7.org/linux/man-pages/man5/passwd.5.html
+  Reference:   https://man7.org/linux/man-pages/man5/login.defs.5.html
+
+Skipped checks (1)
+------------------
+[MEDIUM] FILE-002  /etc/gshadow must not be accessible to other users
+    /etc/gshadow does not exist
+
+Passed checks (4)
+-----------------
+[HIGH] FILE-004  /etc/group must be writable only by root
+    /etc/group ownership and permissions are acceptable
+    - /etc/group mode -rw-r--r-- (0644) owner uid 0 gid 0
+[HIGH] FILE-006  /etc/ssh/sshd_config must be writable only by root
+    /etc/ssh/sshd_config ownership and permissions are acceptable
+    - /etc/ssh/sshd_config mode -rw-r--r-- (0644) owner uid 0 gid 0
+[HIGH] SSH-005  SSH must not permit empty passwords
+    empty passwords are not permitted
+    - PermitEmptyPasswords not set; OpenSSH default is "no"
+[MEDIUM] USER-003  Password hashes must not be stored in /etc/passwd
+    no password hashes in /etc/passwd

@@ -1,0 +1,46 @@
+# Example baseline for sba (security-baseline-auditor).
+#
+# Use with: sba audit --config configs/example-baseline.yaml
+#
+# The file is parsed strictly: unknown fields, unknown rule IDs, duplicate
+# entries and exclusions without a reason are rejected, so a typo cannot
+# silently disable a check.
+
+# Schema version. Only 1 is supported.
+version: 1
+
+# Human-readable name shown in reports.
+name: "Example: Linux server baseline"
+
+# Rules to evaluate. Omit this field entirely to evaluate every built-in rule.
+# List all IDs with: sba rules list
+rules:
+  - SSH-001
+  - SSH-003
+  - SSH-004
+  - SSH-005
+  - SSH-006
+  - SSH-008
+  - SSH-009
+  - USER-001
+  - USER-002
+  - USER-003
+  - USER-004
+  - FW-001
+  - FILE-001
+  - FILE-003
+  - FILE-004
+  - FILE-005
+  - FILE-006
+  - FILE-007
+
+# Excluded rules are still listed in the report as SKIP together with the
+# reason, so accepted risks stay visible.
+exclude:
+  - rule: SSH-008
+    reason: "X11 forwarding is required by the legacy administration tool (risk accepted in ticket SEC-123)"
+
+# Adjust severities to reflect organizational risk. Reports show both the
+# effective and the default severity.
+severity_overrides:
+  SSH-003: high
