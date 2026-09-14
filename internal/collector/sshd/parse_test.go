@@ -328,6 +328,13 @@ func TestCollect(t *testing.T) {
 			wantStatus: model.PermissionDenied,
 		},
 		{
+			name: "unreadable drop-in directory is not treated as empty",
+			fs: platformtest.NewFS().
+				AddText("/etc/ssh/sshd_config", "Include /etc/ssh/sshd_config.d/*.conf\nPermitRootLogin no\n").
+				Add("/etc/ssh/sshd_config.d", platformtest.File{Mode: fs.ModeDir | 0o700, Err: fs.ErrPermission}),
+			wantStatus: model.PermissionDenied,
+		},
+		{
 			name:       "invalid syntax",
 			fs:         platformtest.NewFS().AddText("/etc/ssh/sshd_config", "PermitRootLogin\n"),
 			wantStatus: model.Failed,

@@ -96,8 +96,12 @@ func (f *FS) Glob(pattern string) ([]string, error) {
 	return out, nil
 }
 
-// ReadDirNames implements platform.FS. Directories are implicit.
+// ReadDirNames implements platform.FS. Directories are implicit unless
+// registered explicitly (for example with an Err to simulate EACCES).
 func (f *FS) ReadDirNames(name string) ([]string, error) {
+	if dir, ok := f.files[norm(name)]; ok && dir.Err != nil {
+		return nil, &fs.PathError{Op: "open", Path: name, Err: dir.Err}
+	}
 	prefix := strings.TrimSuffix(norm(name), "/") + "/"
 	seen := map[string]bool{}
 	for p := range f.files {

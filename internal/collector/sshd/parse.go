@@ -133,6 +133,14 @@ func (l *loader) include(pattern, file string, line, depth int, match string) er
 	if !isAbs(pattern) {
 		pattern = filepath.Join(l.configDir, pattern)
 	}
+	// filepath.Glob silently ignores directories it cannot read, which would
+	// turn an unreadable drop-in directory into "no drop-ins" and make the
+	// resolved configuration look complete. Probe the directory first.
+	if dir := filepath.Dir(pattern); !hasMeta(dir) {
+		if _, err := l.fs.ReadDirNames(dir); platform.IsPermission(err) {
+			return fmt.Errorf("%s:%d: Include %q: %w", file, line, pattern, err)
+		}
+	}
 	matches, err := l.fs.Glob(pattern)
 	if err != nil {
 		return fmt.Errorf("%s:%d: Include %q: %w", file, line, pattern, err)
@@ -146,6 +154,10 @@ func (l *loader) include(pattern, file string, line, depth int, match string) er
 		}
 	}
 	return nil
+}
+
+func hasMeta(p string) bool {
+	return strings.ContainsAny(p, `*?[`)
 }
 
 // isAbs treats a leading '/' as absolute on every OS, matching OpenSSH's
