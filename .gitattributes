@@ -1,0 +1,3 @@
+# Keep LF in the repository and working trees so gofmt checks and fixtures
+# behave identically on Windows and Unix.
+* text=auto eol=lf
