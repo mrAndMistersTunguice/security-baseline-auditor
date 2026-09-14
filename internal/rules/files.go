@@ -49,7 +49,7 @@ func fileCheck(p filePolicy) func(*model.Snapshot) Result {
 
 		var problems []string
 		if bad := e.Mode.Perm() & p.forbidden; bad != 0 {
-			problems = append(problems, fmt.Sprintf("permission bits %04o must not be set (allowed at most %04o)", bad, 0o777&^p.forbidden))
+			problems = append(problems, fmt.Sprintf("forbidden permission bits %04o are set (this rule forbids %04o)", bad, p.forbidden))
 		}
 		if p.rootOwned {
 			switch {

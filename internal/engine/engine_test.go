@@ -85,6 +85,16 @@ func TestBaselineSelectionExclusionAndOverride(t *testing.T) {
 	}
 }
 
+func TestRulesOutsideTheirPlatformsAreSkipped(t *testing.T) {
+	called := false
+	r := fakeRule("A-001", model.SeverityHigh, rules.Fail("bad"))
+	r.Check = func(*model.Snapshot) rules.Result { called = true; return rules.Fail("bad") }
+	f := Run(&model.Snapshot{Host: model.Host{OS: "windows"}}, []rules.Rule{r}, baseline.Default()).Findings[0]
+	if called || f.Status != model.StatusSkip || f.Message != "not applicable on windows (rule targets linux)" {
+		t.Fatalf("finding = %+v, check called = %v", f, called)
+	}
+}
+
 func TestPanickingRuleBecomesError(t *testing.T) {
 	catalog := []rules.Rule{
 		{ID: "A-001", Severity: model.SeverityHigh, Check: func(s *model.Snapshot) rules.Result {

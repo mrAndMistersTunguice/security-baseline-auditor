@@ -137,14 +137,15 @@ func checkEmptyPasswords(s *model.Snapshot) Result {
 			shadowed++
 		}
 	}
-	if len(empty) > 0 {
-		// Conclusive without /etc/shadow.
-		return Fail("accounts with empty passwords exist", empty...)
-	}
-	if shadowed == 0 {
+	if shadowed == 0 && len(empty) == 0 {
 		return Pass("no account has an empty password field")
 	}
 	if res, bad := unavailable("/etc/shadow", acc.Shadow); bad {
+		if len(empty) > 0 {
+			// Conclusive without /etc/shadow, but the list may be incomplete.
+			return Fail("accounts with empty passwords exist", append(empty,
+				"note: /etc/shadow was not inspected ("+res.Message+"); more accounts may be affected")...)
+		}
 		res.Evidence = append(res.Evidence, fmt.Sprintf("%d account(s) keep their password in /etc/shadow", shadowed))
 		return res
 	}
@@ -220,7 +221,8 @@ func checkSystemShells(s *model.Snapshot) Result {
 	}
 	var found []string
 	for _, u := range acc.Users {
-		if int64(u.UID) >= int64(acc.UIDMin) || shellExemptAccounts[u.Name] {
+		// UID 0 accounts are covered by USER-001.
+		if u.UID == 0 || int64(u.UID) >= int64(acc.UIDMin) || shellExemptAccounts[u.Name] {
 			continue
 		}
 		if !nonInteractiveShell(u.Shell) {

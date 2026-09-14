@@ -18,7 +18,7 @@ import (
 // File is one fake filesystem entry.
 type File struct {
 	Data      []byte
-	Mode      fs.FileMode // defaults to a regular 0644 file
+	Mode      fs.FileMode // zero is a regular file with no permission bits
 	UID, GID  int64
 	IsSymlink bool
 	// Err, when set, is returned by every operation on this path.
@@ -41,16 +41,13 @@ func norm(name string) string {
 
 // Add registers a file and returns the FS for chaining.
 func (f *FS) Add(name string, file File) *FS {
-	if file.Mode == 0 {
-		file.Mode = 0o644
-	}
 	f.files[norm(name)] = file
 	return f
 }
 
 // AddText registers a regular 0644 root-owned file with the given content.
 func (f *FS) AddText(name, content string) *FS {
-	return f.Add(name, File{Data: []byte(content)})
+	return f.Add(name, File{Data: []byte(content), Mode: 0o644})
 }
 
 // ReadFile implements platform.FS.

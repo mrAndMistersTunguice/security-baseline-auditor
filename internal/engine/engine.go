@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/mrAndMistersTunguice/security-baseline-auditor/internal/baseline"
 	"github.com/mrAndMistersTunguice/security-baseline-auditor/internal/model"
@@ -26,10 +27,13 @@ type Result struct {
 // Summary aggregates findings.
 type Summary struct {
 	Selected int `json:"selected"`
-	Pass     int `json:"pass"`
-	Fail     int `json:"fail"`
-	Skip     int `json:"skip"`
-	Error    int `json:"error"`
+	// Evaluated counts findings with PASS or FAIL; the score covers only
+	// these.
+	Evaluated int `json:"evaluated"`
+	Pass      int `json:"pass"`
+	Fail      int `json:"fail"`
+	Skip      int `json:"skip"`
+	Error     int `json:"error"`
 	// FailedBySeverity counts FAIL findings per severity name.
 	FailedBySeverity map[string]int `json:"failed_by_severity"`
 	// Score is nil when no rule produced PASS or FAIL.
@@ -80,6 +84,11 @@ func evaluate(snap *model.Snapshot, r rules.Rule, b baseline.Baseline) model.Fin
 	if reason, ok := b.Exclusions[r.ID]; ok {
 		f.Status = model.StatusSkip
 		f.Message = "excluded by baseline: " + reason
+		return f
+	}
+	if snap.Host.OS != "" && !slices.Contains(r.Platforms, snap.Host.OS) {
+		f.Status = model.StatusSkip
+		f.Message = fmt.Sprintf("not applicable on %s (rule targets %s)", snap.Host.OS, strings.Join(r.Platforms, ", "))
 		return f
 	}
 
@@ -137,26 +146,24 @@ func summarize(findings []model.Finding) Summary {
 		s.FailedBySeverity[sev.String()] = 0
 	}
 	passWeight, totalWeight := 0, 0
-	evaluated := 0
 	for _, f := range findings {
 		switch f.Status {
 		case model.StatusPass:
 			s.Pass++
 			passWeight += SeverityWeights[f.Severity]
 			totalWeight += SeverityWeights[f.Severity]
-			evaluated++
 		case model.StatusFail:
 			s.Fail++
 			s.FailedBySeverity[f.Severity.String()]++
 			totalWeight += SeverityWeights[f.Severity]
-			evaluated++
 		case model.StatusSkip:
 			s.Skip++
 		case model.StatusError:
 			s.Error++
 		}
 	}
-	if evaluated > 0 && totalWeight > 0 {
+	s.Evaluated = s.Pass + s.Fail
+	if totalWeight > 0 {
 		score := int(math.Round(100 * float64(passWeight) / float64(totalWeight)))
 		s.Score = &score
 	}
